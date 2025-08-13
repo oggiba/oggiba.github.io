@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FrameFlow - Video to Frame Converter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #030712;
+      background-image: radial-gradient(circle at top, #111827, #030712 50%);
+    }
+    .view-fade-in {
+      animation: fadeIn 0.5s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .text-gradient {
+        background-image: linear-gradient(to right, #4ade80, #2dd4bf);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #1f2937;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.1.1",
+    "react-dom/client": "https://esm.sh/react-dom@^19.1.1/client",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "react/": "https://esm.sh/react@^19.1.1/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-gray-900">
+  <div id="root"></div>
+  <script type="module">
+    import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+    import ReactDOM from 'react-dom/client';
+
+    // --- Inlined types.ts ---
+    const FRAME_RATES = [4, 8, 12, 24, 30, 60];
+    const SCALE_FACTORS = [0.25, 0.5, 1, 2, 4];
+
+    // --- Inlined Icon Components ---
+    const FilmReelIcon = (props) => React.createElement("svg", { "aria-hidden": "true", xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth:"2", strokeLinecap:"round", strokeLinejoin:"round", ...props},
+      React.createElement("rect", { x: "2", y: "2", width: "20", height: "20", rx: "2.18", ry: "2.18" }),
+      React.createElement("line", { x1: "7", y1: "2", x2: "7", y2: "22" }),
+      React.createElement("line", { x1: "17", y1: "2", x2: "17", y2: "22" }),
+      React.createElement("line", { x1: "2", y1: "12", x2: "22", y2: "12" }),
+      React.createElement("line", { x1: "2", y1: "7", x2: "7", y2: "7" }),
+      React.createElement("line", { x1: "2", y1: "17", x2: "7", y2: "17" }),
+      React.createElement("line", { x1: "17", y1: "17", x2: "22", y2: "17" }),
+      React.createElement("line", { x1: "17", y1: "7", x2: "22", y2: "7" })
+    );
+    const UploadIcon = (props) => React.createElement("svg", { "aria-hidden": "true", xmlns: "http://www.w3.org/2000/svg", fill: "none", viewBox: "0 0 20 16", ...props }, React.createElement("path", { stroke: "currentColor", strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: "2", d: "M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 4.21 4.5 4.5 0 0 0 1 8h3m10 5H5m5-9v9" }));
+    const SpinnerIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", fill: "none", viewBox: "0 0 24 24", ...props }, React.createElement("circle", { className: "opacity-25", cx: "12", cy: "12", r: "10", stroke: "currentColor", strokeWidth: "4" }), React.createElement("path", { className: "opacity-75", fill: "currentColor", d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" }), React.createElement("animateTransform", { attributeName: "transform", attributeType: "XML", type: "rotate", from: "0 12 12", to: "360 12 12", dur: "1s", repeatCount: "indefinite" }));
+    const PlayIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor", ...props }, React.createElement("path", { d: "M7 6V18L18 12L7 6Z" }));
+    const PauseIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor", ...props }, React.createElement("path", { d: "M6 19H10V5H6V19ZM14 5V19H18V5H14Z" }));
+    const PrevIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor", ...props }, React.createElement("path", { d: "M18 18V6H16V18H18ZM6 12L14 6V18L6 12Z" }));
+    const NextIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", fill: "currentColor", ...props }, React.createElement("path", { d: "M6 18V6H8V18H6ZM18 12L10 18V6L18 12Z" }));
+    const DownloadIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", fill: "none", viewBox: "0 0 24 24", strokeWidth: 2, stroke: "currentColor", ...props }, React.createElement("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" }));
+    const LockIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 20 20", fill: "currentColor", ...props }, React.createElement("path", { fillRule: "evenodd", d: "M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z", clipRule: "evenodd" }));
+    const CheckIcon = (props) => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 20 20", fill: "currentColor", ...props }, React.createElement("path", { fillRule: "evenodd", d: "M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z", clipRule: "evenodd" }));
+
+    // --- Inlined UI Components ---
+    const Button = ({ children, className, variant = 'primary', size = 'normal', shape = 'rounded', ...props }) => {
+        const baseClasses = "flex items-center justify-center font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900 transition-all duration-150 ease-in-out transform active:scale-95";
+        const disabledClasses = "disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none disabled:bg-gray-600 disabled:border-transparent";
+        const variantClasses = {
+            primary: "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-400 hover:to-green-500 focus:ring-green-400 text-white shadow-lg shadow-green-900/40 border border-green-600",
+            secondary: "bg-transparent border border-gray-600 hover:bg-gray-700 hover:border-gray-500 focus:ring-gray-500 text-gray-300",
+            ghost: "bg-transparent hover:bg-gray-700/50 focus:ring-gray-500 text-gray-300 shadow-none",
+            icon: "bg-gray-800 hover:bg-gray-700 border border-gray-700 focus:ring-green-500 text-gray-300 hover:text-white"
+        };
+        const sizeClasses = { small: "px-3 py-1.5 text-sm", normal: "px-4 py-2 text-base", large: "p-3" };
+        const iconSizeClasses = { small: "w-8 h-8", normal: "w-10 h-10", large: "w-12 h-12" };
+        const shapeClasses = { rounded: "rounded-lg", circle: "rounded-full" };
+
+        const finalSizeClasses = variant === 'icon' ? iconSizeClasses[size] : sizeClasses[size];
+        return React.createElement("button", { className: `${baseClasses} ${finalSizeClasses} ${shapeClasses[shape]} ${variantClasses[variant]} ${disabledClasses} ${className}`, ...props }, children);
+    };
+    const Select = ({ label, children, className, ...props }) => {
+        const selectEl = React.createElement("select", { ...props, className: `w-full bg-gray-700 border border-gray-600 text-white rounded-lg p-2.5 focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:opacity-50 disabled:cursor-not-allowed ${className}` }, children);
+        if (label) {
+            return React.createElement("div", null,
+                React.createElement("label", { htmlFor: props.id || props.name, className: "block text-sm font-medium text-gray-300 mb-2" }, label),
+                selectEl
+            );
+        }
+        return selectEl;
+    };
+    const ProgressBar = ({ progress }) => React.createElement("div", { className: "w-full bg-gray-700 rounded-full h-2.5" }, React.createElement("div", { className: "bg-gradient-to-r from-green-400 to-teal-400 h-2.5 rounded-full transition-all duration-200 ease-linear", style: { width: `${progress}%` } }));
+    const Slider = ({ className, ...props }) => React.createElement("input", { type: "range", ...props, className: `w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-green-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:shadow-green-500/40 ${className}` });
+    const ToggleSwitch = ({ label, checked, disabled, ...props }) => React.createElement("label", { className: `relative inline-flex items-center cursor-pointer ${disabled ? 'opacity-50 cursor-not-allowed' : ''}` }, React.createElement("input", { type: "checkbox", className: "sr-only peer", checked: checked, disabled: disabled, ...props }), React.createElement("div", { className: "w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-500 peer-focus:ring-offset-2 peer-focus:ring-offset-gray-900 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600" }), React.createElement("span", { className: "ml-3 text-sm font-medium text-gray-300" }, label));
+
+    // --- Inlined Helper functions ---
+    const getFormattedFilename = (exportMode) => {
+        const now = new Date();
+        const date = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+        const time = `${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}-${now.getSeconds().toString().padStart(2, '0')}`;
+        const extension = exportMode === 'spritesheet' ? 'png' : 'zip';
+        return `Frameflow_${exportMode}_${date}_${time}.${extension}`;
+    };
+
+    // --- Inlined Main Components ---
+    const SnakeGame = () => {
+        const canvasRef = useRef(null);
+        const [gameState, setGameState] = useState('idle'); // idle, running, over
+        const [score, setScore] = useState(0);
+        const gameLoopId = useRef();
+        const lastUpdateTime = useRef(0);
+        const CANVAS_SIZE = 400;
+        const GRID_SIZE = 20;
+        const CELL_SIZE = CANVAS_SIZE / GRID_SIZE;
+        const GAME_SPEED = 100; // ms per update, faster is lower
+        const gameData = useRef({
+            snake: [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }],
+            food: { x: 15, y: 15 },
+            direction: { x: 0, y: 0 },
+            nextDirection: { x: 0, y: 0 },
+        });
+
+        const generateFood = (snake) => {
+            let newFood;
+            do {
+                newFood = {
+                    x: Math.floor(Math.random() * GRID_SIZE),
+                    y: Math.floor(Math.random() * GRID_SIZE),
+                };
+            } while (snake.some(segment => segment.x === newFood.x && segment.y === newFood.y));
+            return newFood;
+        };
+
+        const drawGame = useCallback(() => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const { snake, food } = gameData.current;
+
+            ctx.fillStyle = '#111827';
+            ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+            
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(2, 2, CANVAS_SIZE - 4, CANVAS_SIZE - 4);
+
+            ctx.fillStyle = '#f87171';
+            ctx.fillRect(food.x * CELL_SIZE, food.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            
+            ctx.fillStyle = '#4ade80';
+            snake.forEach(({ x, y }) => ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE));
+        }, [CELL_SIZE]);
+        
+        const resetGame = useCallback(() => {
+            const initialSnake = [{ x: 10, y: 10 }, { x: 9, y: 10 }, { x: 8, y: 10 }];
+            gameData.current = {
+                snake: initialSnake,
+                food: generateFood(initialSnake),
+                direction: { x: 0, y: 0 },
+                nextDirection: { x: 0, y: 0 },
+            };
+            setScore(0);
+            setGameState('idle');
+            requestAnimationFrame(drawGame);
+        }, [drawGame]);
+
+        const endGame = useCallback(() => {
+            setGameState('over');
+            if (gameLoopId.current) cancelAnimationFrame(gameLoopId.current);
+        }, []);
+
+        const gameLoop = useCallback((timestamp) => {
+            if (gameState !== 'running') return;
+            gameLoopId.current = requestAnimationFrame(gameLoop);
+            const elapsed = timestamp - lastUpdateTime.current;
+
+            if (elapsed > GAME_SPEED) {
+                lastUpdateTime.current = timestamp;
+                const { snake, nextDirection, food } = gameData.current;
+                
+                gameData.current.direction = nextDirection;
+                const { direction } = gameData.current;
+
+                if (direction.x === 0 && direction.y === 0) {
+                    drawGame();
+                    return;
+                }
+
+                const newSnake = [...snake];
+                const head = { x: newSnake[0].x + direction.x, y: newSnake[0].y + direction.y };
+
+                if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
+                    endGame();
+                    return;
+                }
+                
+                for (let i = 1; i < newSnake.length; i++) {
+                    if (head.x === newSnake[i].x && head.y === newSnake[i].y) {
+                        endGame();
+                        return;
+                    }
+                }
+
+                newSnake.unshift(head);
+
+                if (head.x === food.x && head.y === food.y) {
+                    setScore(s => s + 1);
+                    gameData.current.food = generateFood(newSnake);
+                } else {
+                    newSnake.pop();
+                }
+
+                gameData.current.snake = newSnake;
+                drawGame();
+            }
+        }, [gameState, drawGame, endGame, GAME_SPEED]);
+        
+        useEffect(() => {
+            const handleKeyDown = (e) => {
+                if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+                e.preventDefault();
+
+                const { direction } = gameData.current;
+                let newDirection = null;
+
+                switch (e.key) {
+                    case 'ArrowUp': if (direction.y === 0) newDirection = { x: 0, y: -1 }; break;
+                    case 'ArrowDown': if (direction.y === 0) newDirection = { x: 0, y: 1 }; break;
+                    case 'ArrowLeft': if (direction.x === 0) newDirection = { x: -1, y: 0 }; break;
+                    case 'ArrowRight': if (direction.x === 0) newDirection = { x: 1, y: 0 }; break;
+                }
+
+                if (newDirection) {
+                    if (gameState === 'idle' || gameState === 'over') {
+                        if(gameState === 'over') resetGame();
+                        gameData.current.nextDirection = newDirection;
+                        setGameState('running');
+                    } else {
+                        gameData.current.nextDirection = newDirection;
+                    }
+                }
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [gameState, resetGame]);
+
+        useEffect(() => {
+            if (gameState === 'running') {
+                lastUpdateTime.current = performance.now();
+                gameLoopId.current = requestAnimationFrame(gameLoop);
+            }
+            return () => {
+                if (gameLoopId.current) cancelAnimationFrame(gameLoopId.current);
+            };
+        }, [gameState, gameLoop]);
+        
+        useEffect(() => {
+            drawGame();
+        }, [drawGame]);
+
+        const Instructions = () => (
+            React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 text-center pointer-events-none rounded-lg" },
+                React.createElement("h2", { className: "text-2xl font-bold text-white mb-4" }, "Snake"),
+                React.createElement("p", { className: "text-lg text-gray-300" }, "Use Arrow Keys to move."),
+                React.createElement("p", { className: "text-lg text-gray-300 mt-2" }, "Press any arrow key to start.")
+            )
+        );
+
+        const GameOverScreen = () => (
+            React.createElement("div", { className: "absolute inset-0 flex flex-col items-center justify-center bg-black/70 rounded-lg" },
+                React.createElement("h2", { className: "text-4xl font-bold text-white mb-2" }, "Game Over"),
+                React.createElement("p", { className: "text-xl text-gray-300 mb-6" }, `Final Score: ${score}`),
+                React.createElement(Button, { onClick: resetGame }, "Play Again")
+            )
+        );
+        
+        return React.createElement("div", { className: "flex flex-col items-center justify-center bg-black rounded-lg w-full relative", style:{height: '400px'} },
+            React.createElement("div", { className: "absolute top-2 right-4 text-white text-2xl font-bold z-10" }, `Score: ${score}`),
+            React.createElement("canvas", { ref: canvasRef, width: "400", height: "400", className: "rounded-lg" }),
+            gameState === 'idle' && React.createElement(Instructions, null),
+            gameState === 'over' && React.createElement(GameOverScreen, null)
+        );
+    };
+
+    const FramePreview = ({ frames, selectedFrames, onToggleSelect, onSelectAll, onDeselectAll }) => {
+        const selectedSet = new Set(selectedFrames);
+        return React.createElement("div", { className: "bg-gray-800/50 border border-gray-700 rounded-xl shadow-lg p-4 space-y-3 mt-4" },
+            React.createElement("div", { className: "flex justify-between items-center px-2" },
+                React.createElement("h2", { className: "text-lg font-semibold text-white" }, `Frame Selection (${selectedFrames.length} / ${frames.length})`),
+                React.createElement("div", { className: "flex gap-4" },
+                    React.createElement("button", { onClick: onSelectAll, className: "text-sm font-medium text-green-400 hover:text-green-300 transition-colors" }, "Select All"),
+                    React.createElement("button", { onClick: onDeselectAll, className: "text-sm font-medium text-gray-400 hover:text-gray-300 transition-colors" }, "Deselect All")
+                )
+            ),
+            React.createElement("div", { className: "flex gap-2 overflow-x-auto pb-3 -mx-2 px-2" },
+                frames.map((frame, index) => React.createElement("div", {
+                    key: index,
+                    className: `relative w-24 aspect-square flex-shrink-0 bg-gray-700 rounded-md overflow-hidden shadow-sm cursor-pointer transition-all duration-200 ${selectedSet.has(index) ? 'ring-2 ring-green-400 shadow-lg shadow-green-500/10' : 'ring-2 ring-transparent hover:ring-green-600/50'}`,
+                    onClick: () => onToggleSelect(index)
+                },
+                    React.createElement("img", { src: frame, alt: `Frame ${index + 1}`, className: "w-full h-full object-cover", loading: "lazy" }),
+                    React.createElement("div", { className: "absolute top-1 left-1 bg-gray-900/50 text-white text-xs rounded-full px-1.5 py-0.5 pointer-events-none" }, index + 1),
+                    selectedSet.has(index) && React.createElement("div", { className: "absolute inset-0 bg-green-500/20" }),
+                    selectedSet.has(index) && React.createElement("div", { className: "absolute top-1 right-1 bg-green-500 text-white w-5 h-5 flex items-center justify-center rounded-full pointer-events-none" }, React.createElement(CheckIcon, { className: "w-3 h-3" }))
+                ))
+            )
+        );
+    };
+    
+    const PlayerControls = (props) => {
+        const { isPlaying, onPlayPause, onPrev, onNext, currentFrame, totalFrames, activeFrames, onSeek, playbackFps, onFpsChange, playbackMode, onPlaybackModeChange, selectedFramesCount, onDownloadAll, onDownloadSelected, onDownloadSpriteSheet, showGrid, onShowGrid } = props;
+        const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+        const downloadMenuRef = useRef(null);
+    
+        useEffect(() => {
+            const handleClickOutside = (event) => { if (downloadMenuRef.current && !downloadMenuRef.current.contains(event.target)) { setIsDownloadMenuOpen(false); } };
+            document.addEventListener("mousedown", handleClickOutside);
+            return () => { document.removeEventListener("mousedown", handleClickOutside); };
+        }, []);
+    
+        const activeIndex = activeFrames.indexOf(currentFrame);
+        const validActiveIndex = isNaN(activeIndex) || activeIndex < 0 ? 0 : activeIndex;
+        
+        const handleFpsDecrement = () => onFpsChange(Math.max(1, playbackFps - 1));
+        const handleFpsIncrement = () => onFpsChange(playbackFps + 1);
+
+        const sortedFrameRates = useMemo(() => {
+            const allRates = new Set(FRAME_RATES);
+            allRates.add(playbackFps);
+            return Array.from(allRates).sort((a,b) => a - b);
+        }, [playbackFps]);
+
+        return React.createElement("div", { className: "space-y-4" },
+            React.createElement("div", { className: "flex items-center gap-4" },
+                React.createElement("span", { className: "text-sm font-mono text-gray-400 w-28 text-center" }, `${activeFrames.length > 0 ? validActiveIndex + 1 : 0} / ${activeFrames.length}`),
+                React.createElement(Slider, { min: 0, max: activeFrames.length > 0 ? activeFrames.length - 1 : 0, value: isNaN(validActiveIndex) ? 0 : validActiveIndex, onChange: (e) => onSeek(activeFrames[parseInt(e.target.value, 10)]), disabled: activeFrames.length === 0, step: 1 })
+            ),
+            React.createElement("div", { className: "flex flex-wrap items-center justify-between gap-4" },
+                React.createElement("div", { className: "flex items-center gap-2" },
+                    React.createElement(Button, { onClick: onPrev, variant: "icon", "aria-label": "Previous Frame", disabled: activeFrames.length === 0, size:"normal" }, React.createElement(PrevIcon, { className: "w-5 h-5" })),
+                    React.createElement(Button, { onClick: onPlayPause, variant: "primary", size: "large", shape: "circle", "aria-label": isPlaying ? "Pause" : "Play", disabled: activeFrames.length === 0 }, isPlaying ? React.createElement(PauseIcon, { className: "w-6 h-6" }) : React.createElement(PlayIcon, { className: "w-6 h-6" })),
+                    React.createElement(Button, { onClick: onNext, variant: "icon", "aria-label": "Next Frame", disabled: activeFrames.length === 0, size:"normal" }, React.createElement(NextIcon, { className: "w-5 h-5" }))
+                ),
+                React.createElement("div", { className: "flex items-center gap-4" },
+                    React.createElement("div", null,
+                        React.createElement("label", { htmlFor: "fps-select", className: "block text-sm font-medium text-gray-300 mb-2 text-center" }, "FPS"),
+                        React.createElement("div", { className: "flex items-center gap-1" },
+                            React.createElement(Button, { onClick: handleFpsDecrement, variant: "icon", "aria-label": "Decrease FPS", disabled: activeFrames.length === 0 || playbackFps <= 1, size:"small" }, React.createElement("span", {className: "text-lg font-bold"}, "-")),
+                            React.createElement(Select, { id: "fps-select", value: playbackFps, onChange: (e) => onFpsChange(Number(e.target.value)), disabled: activeFrames.length === 0, className: "!w-24 text-center" }, sortedFrameRates.map(rate => React.createElement("option", { key: rate, value: rate }, `${rate} fps`))),
+                            React.createElement(Button, { onClick: handleFpsIncrement, variant: "icon", "aria-label": "Increase FPS", disabled: activeFrames.length === 0, size:"small" }, React.createElement("span", {className: "text-lg font-bold"}, "+"))
+                        )
+                    ),
+                    React.createElement(ToggleSwitch, { label: "Loop", checked: playbackMode === 'loop', onChange: () => onPlaybackModeChange(playbackMode === 'loop' ? 'once' : 'loop'), disabled: activeFrames.length === 0 })
+                ),
+                React.createElement("div", { className: "flex items-center gap-2" },
+                    React.createElement(ToggleSwitch, { label: "Show Grid", checked: showGrid, onChange: onShowGrid, disabled: frames.length === 0 }),
+                     React.createElement("div", { className: "relative", ref: downloadMenuRef },
+                        React.createElement(Button, { onClick: () => setIsDownloadMenuOpen(prev => !prev), "aria-haspopup": "true", "aria-expanded": isDownloadMenuOpen }, React.createElement(DownloadIcon, { className: "w-5 h-5 mr-2" }), "Download"),
+                        isDownloadMenuOpen && React.createElement("div", { className: "absolute bottom-full right-0 mb-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20" },
+                             React.createElement("ul", { className: "py-1", role: "menu" },
+                                React.createElement("li", { role: "menuitem" }, React.createElement("button", { onClick: () => { setIsDownloadMenuOpen(false); onDownloadSpriteSheet(); }, className: "w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50", disabled: totalFrames === 0 }, "Download Spritesheet")),
+                                React.createElement("li", { role: "menuitem" }, React.createElement("button", { onClick: () => { setIsDownloadMenuOpen(false); onDownloadSelected(); }, className: "w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50", disabled: selectedFramesCount === 0 }, `Download Selected (${selectedFramesCount})`)),
+                                React.createElement("li", { role: "menuitem" }, React.createElement("button", { onClick: () => { setIsDownloadMenuOpen(false); onDownloadAll(); }, className: "w-full text-left px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 disabled:opacity-50", disabled: totalFrames === 0 }, `Download All (${totalFrames})`))
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    };
+
+    const DownloadOverlay = () => (
+        React.createElement("div", { className: "fixed inset-0 bg-black/70 flex items-center justify-center z-50 transition-opacity duration-300" },
+            React.createElement("div", { className: "flex flex-col items-center justify-center bg-gray-800 p-8 rounded-xl shadow-2xl" },
+                React.createElement(SpinnerIcon, { className: "w-12 h-12 text-green-500 animate-spin mb-4" }),
+                React.createElement("p", { className: "text-white text-lg font-semibold" }, "Preparing download...")
+            )
+        )
+    );
+
+    const App = () => {
+        const [currentView, setCurrentView] = useState('upload'); // upload, config, processing, player
+        const [videoFile, setVideoFile] = useState(null);
+        const [videoSrc, setVideoSrc] = useState('');
+        const [frames, setFrames] = useState([]);
+        const [frameRate, setFrameRate] = useState(12);
+        const [scaleFactor, setScaleFactor] = useState(1);
+        const [progress, setProgress] = useState(0);
+        const [isExtractionFinished, setIsExtractionFinished] = useState(false);
+        const [processingStatus, setProcessingStatus] = useState("Extracting frames...");
+        const [isDownloading, setIsDownloading] = useState(false);
+        
+        // Player state
+        const [currentFrame, setCurrentFrame] = useState(0);
+        const [isPlaying, setIsPlaying] = useState(false);
+        const [playbackFps, setPlaybackFps] = useState(12);
+        const [playbackMode, setPlaybackMode] = useState('loop'); // 'loop', 'once'
+        const [selectedFrames, setSelectedFrames] = useState([]);
+        const [showGrid, setShowGrid] = useState(true);
+        const playerIntervalRef = useRef();
+
+        const activeFrames = useMemo(() => selectedFrames.length > 0 ? selectedFrames.sort((a,b) => a-b) : [...Array(frames.length).keys()], [frames, selectedFrames]);
+        
+        const handleFileChange = useCallback((file) => {
+            if (file && file.type.startsWith('video/')) {
+                const video = document.createElement('video');
+                const objectUrl = URL.createObjectURL(file);
+                video.src = objectUrl;
+                video.onloadedmetadata = () => {
+                   file.duration = video.duration;
+                   setVideoFile(file);
+                   setVideoSrc(objectUrl);
+                   setCurrentView('config');
+                };
+            } else {
+                alert('Please upload a valid video file.');
+            }
+        }, []);
+
+        const handleExtractionFinished = (extractedFrames) => {
+            setFrames(extractedFrames);
+            setIsExtractionFinished(true);
+        };
+        
+        useEffect(() => {
+            if (isExtractionFinished) {
+                setProcessingStatus("Extraction Complete! Preparing player...");
+                const timer = setTimeout(() => {
+                    setCurrentView('player');
+                }, 1500);
+                return () => clearTimeout(timer);
+            }
+        }, [isExtractionFinished]);
+
+        const handleConvert = useCallback(() => {
+            if (!videoFile) return;
+
+            setCurrentView('processing');
+            setIsExtractionFinished(false);
+            setProgress(0);
+            setProcessingStatus("Extracting frames... Play a game while you wait!");
+
+            const video = document.createElement('video');
+            video.src = videoSrc;
+            video.muted = true;
+
+            video.onloadedmetadata = () => {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                const totalFramesToExtract = Math.floor(video.duration * frameRate);
+                const extractedFrames = [];
+                let frameCount = 0;
+
+                const extractFrame = () => {
+                    if (frameCount >= totalFramesToExtract) {
+                        handleExtractionFinished(extractedFrames);
+                        return;
+                    }
+                    const time = frameCount / frameRate;
+                    video.currentTime = time;
+                };
+
+                video.onseeked = () => {
+                    if(frameCount >= totalFramesToExtract) return; // Prevent extra onseeked events
+                    const newWidth = video.videoWidth * scaleFactor;
+                    const newHeight = video.videoHeight * scaleFactor;
+                    canvas.width = newWidth;
+                    canvas.height = newHeight;
+                    context.drawImage(video, 0, 0, newWidth, newHeight);
+                    extractedFrames.push(canvas.toDataURL('image/png'));
+                    frameCount++;
+                    setProgress((frameCount / totalFramesToExtract) * 100);
+                    
+                    // Use setTimeout to yield to main thread, improving UI responsiveness.
+                    setTimeout(extractFrame, 10); // A small delay to keep snake game smooth
+                };
+                
+                extractFrame();
+            };
+        }, [videoFile, videoSrc, frameRate, scaleFactor]);
+
+        const handleStartOver = () => {
+            if (videoSrc) URL.revokeObjectURL(videoSrc);
+            setVideoFile(null);
+            setVideoSrc('');
+            setFrames([]);
+            setSelectedFrames([]);
+            setCurrentFrame(0);
+            setIsPlaying(false);
+            setProgress(0);
+            setShowGrid(true);
+            setCurrentView('upload');
+        };
+
+        const executeDownload = async (downloadFunction) => {
+            setIsDownloading(true);
+            await new Promise(resolve => setTimeout(resolve, 50)); // UI update
+            try {
+                await downloadFunction();
+            } catch (err) {
+                console.error("Download failed:", err);
+                alert("An error occurred during download.");
+            } finally {
+                setTimeout(() => setIsDownloading(false), 500); // Prevent UI freeze feel
+            }
+        };
+
+        const handleDownloadAll = useCallback(() => executeDownload(async () => {
+            const zip = new JSZip();
+            frames.forEach((frame, index) => {
+                const base64Data = frame.split(',')[1];
+                zip.file(`frame_${String(index + 1).padStart(4, '0')}.png`, base64Data, { base64: true });
+            });
+            const content = await zip.generateAsync({ type: "blob" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(content);
+            a.download = getFormattedFilename('allframes');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        }), [frames]);
+
+        const handleDownloadSelected = useCallback(() => executeDownload(async () => {
+            if (selectedFrames.length === 0) return;
+            const zip = new JSZip();
+            selectedFrames.forEach((frameIndex) => {
+                const frame = frames[frameIndex];
+                const base64Data = frame.split(',')[1];
+                zip.file(`frame_${String(frameIndex + 1).padStart(4, '0')}.png`, base64Data, { base64: true });
+            });
+            const content = await zip.generateAsync({ type: "blob" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(content);
+            a.download = getFormattedFilename('selectedframes');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        }), [frames, selectedFrames]);
+        
+        const handleDownloadSpriteSheet = useCallback(() => executeDownload(async () => {
+            if (frames.length === 0) return;
+            const firstFrame = new Image();
+            firstFrame.src = frames[0];
+            await new Promise(resolve => { firstFrame.onload = resolve; });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = firstFrame.width * frames.length;
+            canvas.height = firstFrame.height;
+            
+            for (let i = 0; i < frames.length; i++) {
+                const img = new Image();
+                img.src = frames[i];
+                await new Promise(resolve => { img.onload = resolve; });
+                ctx.drawImage(img, i * firstFrame.width, 0);
+            }
+
+            const a = document.createElement("a");
+            a.href = canvas.toDataURL('image/png');
+            a.download = getFormattedFilename('spritesheet');
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }), [frames]);
+
+        // Player Logic
+        useEffect(() => {
+            if (isPlaying && activeFrames.length > 0) {
+                clearInterval(playerIntervalRef.current);
+                playerIntervalRef.current = setInterval(() => {
+                    setCurrentFrame(prevFrame => {
+                        const currentIndex = activeFrames.indexOf(prevFrame);
+                        let nextIndex = currentIndex + 1;
+                        if (nextIndex >= activeFrames.length) {
+                            if (playbackMode === 'loop') {
+                                nextIndex = 0;
+                            } else {
+                                setIsPlaying(false);
+                                return prevFrame;
+                            }
+                        }
+                        return activeFrames[nextIndex];
+                    });
+                }, 1000 / playbackFps);
+            } else {
+                clearInterval(playerIntervalRef.current);
+            }
+            return () => clearInterval(playerIntervalRef.current);
+        }, [isPlaying, playbackFps, playbackMode, activeFrames]);
+
+        const handlePlayPause = () => setIsPlaying(p => !p);
+        const handleSeek = (frameIndex) => { setCurrentFrame(frameIndex); };
+        const handlePrevFrame = () => {
+            const currentIndex = activeFrames.indexOf(currentFrame);
+            const prevIndex = (currentIndex - 1 + activeFrames.length) % activeFrames.length;
+            setCurrentFrame(activeFrames[prevIndex]);
+        };
+        const handleNextFrame = () => {
+            const currentIndex = activeFrames.indexOf(currentFrame);
+            const nextIndex = (currentIndex + 1) % activeFrames.length;
+            setCurrentFrame(activeFrames[nextIndex]);
+        };
+        const handleToggleSelectFrame = (frameIndex) => {
+            setSelectedFrames(prev => {
+                const set = new Set(prev);
+                if (set.has(frameIndex)) {
+                    set.delete(frameIndex);
+                } else {
+                    set.add(frameIndex);
+                }
+                return Array.from(set).sort((a,b) => a-b);
+            });
+        };
+        
+        const renderView = () => {
+            switch(currentView) {
+                case 'upload':
+                    return React.createElement("div", { className: "text-center" },
+                        React.createElement("h1", { className: "text-5xl font-extrabold sm:text-6xl md:text-7xl mb-4 text-gradient" }, "FrameFlow"),
+                        React.createElement("p", { className: "text-lg text-gray-400 mb-8 max-w-2xl mx-auto" }, "Effortlessly convert your videos into frame-by-frame spritesheets for your next creative project."),
+                        React.createElement("label", { htmlFor: "video-upload", className: "relative cursor-pointer" },
+                            React.createElement("div", { className: "w-full max-w-lg mx-auto bg-gray-800/50 border-2 border-dashed border-gray-700 rounded-xl p-8 hover:bg-gray-800/80 hover:border-green-500/50 transition-all duration-300 shadow-lg" },
+                                React.createElement(UploadIcon, { className: "w-12 h-12 mx-auto text-gray-500 mb-4" }),
+                                React.createElement("h3", { className: "text-xl font-semibold text-white" }, "Click to upload or drag and drop"),
+                                React.createElement("p", { className: "text-gray-500" }, "MP4, WebM, or OGG (Max 20MB)")
+                            ),
+                            React.createElement("input", { id: "video-upload", type: "file", accept: "video/*", className: "sr-only", onChange: (e) => handleFileChange(e.target.files[0]) })
+                        )
+                    );
+                case 'config':
+                    return React.createElement("div", { className: "w-full max-w-4xl mx-auto bg-gray-800/50 border border-gray-700 rounded-xl shadow-2xl p-8" },
+                         React.createElement("h2", { className: "text-3xl font-bold text-white mb-6 text-center" }, "Configuration"),
+                         React.createElement("div", { className: "grid md:grid-cols-2 gap-8 items-start" },
+                            React.createElement("div", { className: "bg-black rounded-lg overflow-hidden shadow-lg h-[400px]" },
+                                React.createElement("video", { src: videoSrc, controls: true, className: "w-full h-full object-contain" })
+                            ),
+                            React.createElement("div", { className: "space-y-6" },
+                                React.createElement(Select, { label: "Frame Rate", id: "frame-rate", value: frameRate, onChange: (e) => setFrameRate(Number(e.target.value)) }, FRAME_RATES.map(rate => React.createElement("option", { key: rate, value: rate }, `${rate} fps`))),
+                                React.createElement(Select, { label: "Scale Factor", id: "scale-factor", value: scaleFactor, onChange: (e) => setScaleFactor(Number(e.target.value)) }, SCALE_FACTORS.map(scale => React.createElement("option", { key: scale, value: scale }, `${scale * 100}%`))),
+                                React.createElement("div", { className: "text-gray-400 text-sm p-4 bg-gray-900/50 rounded-lg" },
+                                    React.createElement("p", null, "This will generate approximately ", React.createElement("strong", {className: "text-white"}, Math.floor((videoFile?.duration || 0) * frameRate)), " frames."),
+                                    React.createElement("p", null, "Estimated spritesheet size will depend on final frame dimensions.")
+                                ),
+                                React.createElement("div", { className: "flex gap-4 pt-4" },
+                                    React.createElement(Button, { onClick: handleStartOver, variant: "secondary", className: "w-full" }, "Start Over"),
+                                    React.createElement(Button, { onClick: handleConvert, className: "w-full" }, "Convert to Frames")
+                                )
+                            )
+                         )
+                    );
+                case 'processing':
+                     return React.createElement("div", { className: "w-full max-w-4xl mx-auto flex flex-col items-center" },
+                         React.createElement(SnakeGame, null),
+                         React.createElement("div", { className: "w-full max-w-md mt-6 text-center" },
+                            React.createElement(ProgressBar, { progress: progress }),
+                            React.createElement("p", { className: "text-white mt-3" }, processingStatus)
+                         )
+                     );
+                case 'player':
+                    return React.createElement("div", { className: "w-full max-w-5xl mx-auto" },
+                        React.createElement("div", { className: "w-full bg-black rounded-lg shadow-2xl shadow-black/50 overflow-hidden mb-4 relative", style:{height: '400px'} },
+                            frames.length > 0 && React.createElement("img", { src: frames[currentFrame], className: "w-full h-full object-contain" })
+                        ),
+                        React.createElement("div", { className: "bg-gray-800/50 border border-gray-700 p-6 rounded-xl shadow-lg" },
+                            React.createElement(PlayerControls, {
+                                isPlaying, onPlayPause: handlePlayPause, onPrev: handlePrevFrame, onNext: handleNextFrame,
+                                currentFrame, totalFrames: frames.length, activeFrames, onSeek: handleSeek,
+                                playbackFps, onFpsChange: setPlaybackFps, playbackMode, onPlaybackModeChange: setPlaybackMode,
+                                selectedFramesCount: selectedFrames.length,
+                                onDownloadAll: handleDownloadAll, onDownloadSelected: handleDownloadSelected, onDownloadSpriteSheet: handleDownloadSpriteSheet,
+                                showGrid, onShowGrid: () => setShowGrid(s => !s),
+                            })
+                        ),
+                        showGrid && React.createElement(FramePreview, {
+                            frames: frames,
+                            selectedFrames: selectedFrames,
+                            onToggleSelect: handleToggleSelectFrame,
+                            onSelectAll: () => setSelectedFrames([...Array(frames.length).keys()]),
+                            onDeselectAll: () => setSelectedFrames([])
+                        }),
+                        React.createElement("div", { className: "mt-6 text-center" },
+                            React.createElement(Button, { onClick: handleStartOver, variant: "secondary" }, "Start Over")
+                        )
+                    );
+                default:
+                    return null;
+            }
+        };
+
+        return React.createElement("div", { className: "min-h-screen text-white flex flex-col items-center justify-center p-4" },
+            isDownloading && React.createElement(DownloadOverlay, null),
+            React.createElement("div", { key: currentView, className: "view-fade-in w-full flex items-center justify-center" },
+                renderView()
+            )
+        );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
